@@ -47,35 +47,38 @@ from ichnaea import util
 
 class TestCell(CeleryTestCase):
 
-    def add_line_of_cells_and_scan_lac(self):
+    def add_line_of_cells_and_scan_lac(self, num_cells=10):
         session = self.db_master_session
-        big = 1.0
-        small = big / 10
-        keys = dict(radio=1, mcc=1, mnc=1, lac=1)
-        measures = [
-            CellMeasure(lat=ctr + xd, lon=ctr + yd, cid=cell, **keys)
-            for cell in range(10)
-            for ctr in [cell * big]
-            for (xd, yd) in [(small, small),
-                             (small, -small),
-                             (-small, small),
-                             (-small, -small)]
-        ]
-        session.add_all(measures)
+        keys = {'radio': 1, 'mcc': 1, 'mnc': 1, 'lac': 1}
+        deltas = [(0.1, 0.1), (0.1, -0.1), (-0.1, 0.1), (-0.1, -0.1)]
 
-        cells = [
-            Cell(lat=ctr, lon=ctr, cid=cell,
-                 new_measures=4, total_measures=1, **keys)
-            for cell in range(10)
-            for ctr in [cell * big]
-        ]
+        for cell_id in range(1, num_cells+1):
+            center = float(cell_id)
 
-        session.add_all(cells)
+            for (dx, dy) in deltas:
+                measure = CellMeasure(
+                    lat=center + dx,
+                    lon=center + dy,
+                    cid=cell_id,
+                    **keys)
+
+                session.add(measure)
+
+            cell = Cell(
+                lat=center,
+                lon=center,
+                cid=cell_id,
+                new_measures=4,
+                total_measures=1,
+                **keys)
+
+            session.add(cell)
+
         session.commit()
         result = location_update_cell.delay(min_new=0,
                                             max_new=9999,
-                                            batch=len(measures))
-        self.assertEqual(result.get(), (len(cells), 0))
+                                            batch=(num_cells * 4))
+        self.assertEqual(result.get(), (num_cells, 0))
         scan_lacs.delay()
 
     def test_blacklist(self):
@@ -361,28 +364,44 @@ class TestCell(CeleryTestCase):
         session.add(Score(userid=1, key=SCORE_TYPE['new_cell'], value=7))
         session.flush()
 
-        measure = dict(
-            created=encode_datetime(time),
-            lat=PARIS_LAT,
-            lon=PARIS_LON,
-            time=encode_datetime(time), accuracy=0, altitude=0,
-            altitude_accuracy=0, radio=RADIO_TYPE['gsm'])
+        measure = {
+            'accuracy': 0,
+            'altitude': 0,
+            'altitude_accuracy': 0,
+            'created': encode_datetime(time),
+            'lat': PARIS_LAT,
+            'lon': PARIS_LON,
+            'mcc': FRANCE_MCC,
+            'mnc': 2,
+            'radio': RADIO_TYPE['gsm'],
+            'time': encode_datetime(time),
+        }
+
         entries = [
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": 3147483647, "cid": 2147483647,
-             "psc": 5, "asu": 8},
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": -1, "cid": -1,
-             "psc": 5, "asu": 8},
+            {
+                'lac': 3147483647,
+                'cid': 2147483647,
+                'psc': 5,
+                'asu': 8
+            },
+            {
+                'lac': 0,
+                'cid': 0,
+                'psc': 5,
+                'asu': 8
+            },
         ]
-        for e in entries:
-            e.update(measure)
+
+        for entry in entries:
+            entry.update(measure)
 
         result = insert_measures_cell.delay(entries, userid=1)
         self.assertEqual(result.get(), 2)
 
         measures = session.query(CellMeasure).all()
         self.assertEqual(len(measures), 2)
-        self.assertEqual(set([m.lac for m in measures]), set([-1]))
-        self.assertEqual(set([m.cid for m in measures]), set([-1]))
+        self.assertEqual(set([m.lac for m in measures]), set([0]))
+        self.assertEqual(set([m.cid for m in measures]), set([0]))
 
         # Nothing should change in the initially created Cell record
         cells = session.query(Cell).all()
@@ -537,24 +556,25 @@ class TestCell(CeleryTestCase):
         # confirm we got one
         lac = session.query(CellArea).filter(CellArea.lac == 1).first()
 
-        self.assertEqual(lac.lat, 4.5)
-        self.assertEqual(lac.lon, 4.5)
-        self.assertEqual(lac.range, 723001)
+        self.assertEqual(lac.lat, 5.5)
+        self.assertEqual(lac.lon, 5.5)
+        self.assertEqual(lac.range, 722704)
 
         # Remove cells one by one checking that the LAC
         # changes shape along the way.
         steps = [
             ((5.0, 5.0), 644242),
-            ((5.5, 5.5), 565475),
-            ((6.0, 6.0), 486721),
-            ((6.5, 6.5), 408000),
-            ((7.0, 7.0), 329334),
-            ((7.5, 7.5), 250743),
-            ((8.0, 8.0), 172249),
-            ((8.5, 8.5), 93871),
-            ((9.0, 9.0), 15630),
+            ((6.0, 6.0), 643904),
+            ((6.5, 6.5), 565114),
+            ((7.0, 7.0), 486354),
+            ((7.5, 7.5), 407647),
+            ((8.0, 8.0), 329011),
+            ((8.5, 8.5), 250469),
+            ((9.0, 9.0), 172041),
+            ((9.5, 9.5), 93747),
+            ((10, 10), 15608),
         ]
-        for i in range(9):
+        for i in range(1, 10):
             session.expire(lac)
             k = CellKey(cid=i, **keys)
             result = remove_cell.delay([k])
@@ -568,56 +588,13 @@ class TestCell(CeleryTestCase):
             self.assertEqual(lac.range, steps[i][1])
 
         # Remove final cell, check LAC is gone
-        k = CellKey(cid=9, **keys)
+        k = CellKey(cid=10, **keys)
         result = remove_cell.delay([k])
         self.assertEqual(1, result.get())
         result = scan_lacs.delay()
         self.assertEqual(1, result.get())
         lac = session.query(CellArea).filter(CellArea.lac == 1).first()
         self.assertEqual(lac, None)
-
-    def test_scan_lacs_asymmetric(self):
-        session = self.db_master_session
-        big = 0.1
-        small = big / 10
-        keys = dict(radio=1, mcc=1, mnc=1, lac=1)
-        measures = [
-            CellMeasure(lat=ctr + xd, lon=ctr + yd, cid=cell, **keys)
-            for cell in range(6)
-            for ctr in [(2 ** cell) * big]
-            for (xd, yd) in [(small, small),
-                             (small, -small),
-                             (-small, small),
-                             (-small, -small)]
-        ]
-        session.add_all(measures)
-
-        cells = [
-            Cell(lat=ctr, lon=ctr, cid=cell,
-                 new_measures=4, total_measures=1, **keys)
-            for cell in range(6)
-            for ctr in [(2 ** cell) * big]
-        ]
-
-        session.add_all(cells)
-        session.commit()
-        result = location_update_cell.delay(min_new=0,
-                                            max_new=9999,
-                                            batch=len(measures))
-        self.assertEqual(result.get(), (len(cells), 0))
-        scan_lacs.delay()
-        lac = session.query(CellArea).filter(CellArea.lac == 1).first()
-
-        # We produced a sequence of 0.02-degree-on-a-side
-        # cell bounding boxes centered at
-        # [0, 0.2, 0.4, 0.8, 1.6, 3.2] degrees.
-        # So the lower-left corner is at (-0.01, -0.01)
-        # and the upper-right corner is at (3.21, 3.21)
-        # we should therefore see a LAC centroid at (1.05, 1.05)
-        # with a range of 339.540m
-        self.assertEqual(lac.lat, 1.05)
-        self.assertEqual(lac.lon, 1.05)
-        self.assertEqual(lac.range, 339540)
 
     def test_scan_lacs_race_with_location_update(self):
         session = self.db_master_session
@@ -696,9 +673,9 @@ class TestCell(CeleryTestCase):
         # and the upper-right corner is at (9.1, 9.1)
         # we should therefore see a LAC centroid at (4.5, 4.5)
         # with a range of 723,001m
-        self.assertEqual(lac.lat, 4.5)
-        self.assertEqual(lac.lon, 4.5)
-        self.assertEqual(lac.range, 723001)
+        self.assertEqual(lac.lat, 5.5)
+        self.assertEqual(lac.lon, 5.5)
+        self.assertEqual(lac.range, 722704)
         self.assertEqual(lac.created.date(), today)
         self.assertEqual(lac.modified.date(), today)
         self.assertEqual(lac.num_cells, 10)

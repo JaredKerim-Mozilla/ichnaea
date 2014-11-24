@@ -209,8 +209,8 @@ def normalized_cell_dict(d, default_radio=-1):
         d, dict(radio=(MIN_RADIO_TYPE, MAX_RADIO_TYPE, default_radio),
                 mcc=(1, 999, REQUIRED),
                 mnc=(0, 32767, REQUIRED),
-                lac=(1, 65535, -1),
-                cid=(1, 268435455, -1),
+                lac=(1, 65535, None),
+                cid=(1, 4294967295, None),
                 psc=(0, 512, -1)))
 
     if d is None:
@@ -226,7 +226,7 @@ def normalized_cell_dict(d, default_radio=-1):
 
     # Skip CDMA towers missing lac or cid (no psc on CDMA exists to
     # backfill using inference)
-    if d['radio'] == RADIO_TYPE['cdma'] and (d['lac'] < 0 or d['cid'] < 0):
+    if d['radio'] == RADIO_TYPE['cdma'] and (d['lac'] is None or d['cid'] is None):
         return None
 
     # Skip GSM/LTE/UMTS towers with an invalid MNC
@@ -236,16 +236,20 @@ def normalized_cell_dict(d, default_radio=-1):
         return None
 
     # Treat cid=65535 without a valid lac as an unspecified value
-    if d['lac'] == -1 and d['cid'] == 65535:
-        d['cid'] = -1
+    if d['lac'] is None and d['cid'] == 65535:
+        d['cid'] = 0
 
     # Must have (lac and cid) or psc (psc-only to use in backfill)
-    if (d['lac'] == -1 or d['cid'] == -1) and d['psc'] == -1:
+    if (d['lac'] is None or d['cid'] is None) and d['psc'] == -1:
         return None
 
     # If the cell id >= 65536 then it must be a umts tower
     if d['cid'] >= 65536 and d['radio'] == RADIO_TYPE['gsm']:
         d['radio'] = RADIO_TYPE['umts']
+
+    # If the radio type is CDMA the cid must be 16 bits
+    if d['radio'] == RADIO_TYPE['cdma'] and d['cid'] >= 65536:
+        return None
 
     return d
 

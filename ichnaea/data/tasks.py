@@ -294,11 +294,11 @@ def incomplete_measure(key):
     """
     Certain incomplete measures we want to store in the database
     even though they should not lead to the creation of a station
-    entry; these are cell measures with -1 for LAC and/or CID, and
+    entry; these are cell measures with 0 for LAC and/or CID, and
     will be inferred from neighboring cells.
     """
     if hasattr(key, 'radio') and \
-       (key.radio < 0 or key.lac < 0 or key.cid < 0):  # NOQA
+       (key.radio < 0 or key.lac < 1 or key.cid < 1):  # NOQA
         return True
     return False
 
@@ -703,7 +703,7 @@ def location_update_cell(self, min_new=10, max_new=100, batch=10):
             for cell in cells:
                 # skip cells with a missing lac/cid
                 # or virtual LAC cells
-                if cell.lac == -1 or cell.cid == -1:  # pragma: no cover
+                if cell.lac < 1 or cell.cid < 1:
                     continue
 
                 query = session.query(

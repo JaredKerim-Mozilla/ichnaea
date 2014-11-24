@@ -38,6 +38,8 @@ else
 	mysql -u$(MYSQL_USER) -p$(MYSQL_PWD) -h localhost -e \
 		"create database $(MYSQL_DB)" || echo
 	mysql -u$(MYSQL_USER) -p$(MYSQL_PWD) -h localhost -e \
+		"drop database $(MYSQL_TEST_DB)" || echo
+	mysql -u$(MYSQL_USER) -p$(MYSQL_PWD) -h localhost -e \
 		"create database $(MYSQL_TEST_DB)" || echo
 endif
 

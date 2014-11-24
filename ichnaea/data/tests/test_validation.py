@@ -12,6 +12,7 @@ from ichnaea.data.validation import (
     normalized_wifi_measure_dict,
 )
 from ichnaea.data.constants import WIFI_TEST_KEY
+from ichnaea.models import RADIO_TYPE
 from ichnaea.tests.base import TestCase
 from ichnaea.tests.base import (
     FREMONT_LAT, FREMONT_LON, USA_MCC,
@@ -104,8 +105,12 @@ class TestValidation(TestCase):
         valid_lacs = [1, 763, 65535]
         invalid_lacs = [-1, 0, -10, 65536, 987347]
 
-        valid_cids = [1, 12345, 268435455]
-        invalid_cids = [-10, -1, 0, 268435456, 498169872]
+        valid_cids = [1, 4294967295]
+        invalid_cids = {
+            RADIO_TYPE['gsm']: [-10, -1, 0, 4294967296],
+            RADIO_TYPE['cdma']: [65536],
+            RADIO_TYPE['lte']: [268435456],
+        }
 
         valid_pscs = [0, 120, 512]
         invalid_pscs = [-1, 513, 4456]
@@ -190,10 +195,11 @@ class TestValidation(TestCase):
                 self.check_normalized_cell(measure, cell, None)
 
         # Try all invalid cids, with an invalid psc
-        for cid in invalid_cids:
-            for psc in invalid_pscs:
-                (measure, cell) = self.make_cell_submission(cid=cid, psc=psc)
-                self.check_normalized_cell(measure, cell, None)
+        for radio, cids in invalid_cids.items():
+            for cid in cids:
+                for psc in invalid_pscs:
+                    (measure, cell) = self.make_cell_submission(cid=cid, psc=psc)
+                    self.check_normalized_cell(measure, cell, {'radio': radio})
 
         # Try all invalid lacs, with a valid psc
         for lac in invalid_lacs:
@@ -203,14 +209,16 @@ class TestValidation(TestCase):
                                                                psc=psc))
 
         # Try all invalid cids, with a valid psc
-        for cid in invalid_cids:
-            for psc in valid_pscs:
-                (measure, cell) = self.make_cell_submission(cid=cid, psc=psc)
-                self.check_normalized_cell(measure, cell, dict(cid=-1,
-                                                               psc=psc))
+        for radio, cids in invalid_cids.items():
+            for cid in cids:
+                for psc in valid_pscs:
+                    (measure, cell) = self.make_cell_submission(cid=cid, psc=psc)
+                    self.check_normalized_cell(measure, cell, dict(cid=-1,
+                                                                   psc=psc,
+                                                                   radio=radio))
 
         # Try special invalid lac, cid 65535 combination
-        (measure, cell) = self.make_cell_submission(lac=0, cid=65535)
+        (measure, cell) = self.make_cell_submission(lac=None, cid=65535)
         self.check_normalized_cell(measure, cell, None)
 
         # Try all invalid latitudes individually

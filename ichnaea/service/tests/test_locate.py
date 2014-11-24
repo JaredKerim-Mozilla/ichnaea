@@ -379,7 +379,7 @@ class TestSearchAllSources(DBTestCase):
         lte = RADIO_TYPE['lte']
 
         key = dict(mcc=FRANCE_MCC, mnc=2, lac=3)
-        ignored_key = dict(mcc=FRANCE_MCC, mnc=2, lac=-1, cid=-1)
+        ignored_key = dict(mcc=FRANCE_MCC, mnc=2, lac=0, cid=0)
 
         data = [
             Cell(lat=lat, lon=lon, radio=gsm, cid=4, **key),
@@ -395,8 +395,8 @@ class TestSearchAllSources(DBTestCase):
                 dict(radio="gsm", cid=4, **key),
                 dict(radio="gsm", cid=5, **key),
 
-                dict(radio="gsm", cid=5, mcc=FRANCE_MCC, mnc=2, lac=-1),
-                dict(radio="gsm", cid=-1, mcc=FRANCE_MCC, mnc=2, lac=3),
+                dict(radio="gsm", cid=5, mcc=FRANCE_MCC, mnc=2, lac=0),
+                dict(radio="gsm", cid=0, mcc=FRANCE_MCC, mnc=2, lac=3),
             ]
         })
         self.assertEqual(result,
