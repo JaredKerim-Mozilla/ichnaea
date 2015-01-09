@@ -28,7 +28,7 @@ from ichnaea.data.constants import (
 )
 
 from colander import Invalid
-from ichnaea.data.schema import ValidCellMeasureSchema
+from ichnaea.data.schema import ValidCellSchema, ValidCellMeasureSchema
 
 
 def valid_wifi_pattern(key):
@@ -200,56 +200,11 @@ def normalized_cell_dict(data, default_radio=-1):
     Returns a normalized copy of the provided cell dict data,
     or None if the dict was invalid.
     """
-    if not isinstance(data, dict):  # pragma: no cover
-        return None
-
-    data = data.copy()
-    if 'radio' in data and isinstance(data['radio'], basestring):
-        data['radio'] = RADIO_TYPE.get(data['radio'], -1)
-
-    data = normalized_dict(
-        data, dict(radio=(MIN_RADIO_TYPE, MAX_RADIO_TYPE, default_radio),
-                mcc=(1, 999, REQUIRED),
-                mnc=(0, 32767, REQUIRED),
-                lac=(1, 65535, -1),
-                cid=(1, 268435455, -1),
-                psc=(0, 512, -1)))
-
-    if data is None:
-        return None
-
-    # Check against the list of all known valid mccs
-    if data['mcc'] not in ALL_VALID_MCCS:
-        return None
-
-    # If a default radio was set, and we don't know, use it as fallback
-    if data['radio'] == -1 and default_radio != -1:
-        data['radio'] = default_radio
-
-    # Skip CDMA towers missing lac or cid (no psc on CDMA exists to
-    # backfill using inference)
-    if data['radio'] == RADIO_TYPE['cdma'] and (data['lac'] < 0 or data['cid'] < 0):
-        return None
-
-    # Skip GSM/LTE/UMTS towers with an invalid MNC
-    if (data['radio'] in (
-            RADIO_TYPE['gsm'], RADIO_TYPE['umts'], RADIO_TYPE['lte'])
-            and data['mnc'] > 999):
-        return None
-
-    # Treat cid=65535 without a valid lac as an unspecified value
-    if data['lac'] == -1 and data['cid'] == 65535:
-        data['cid'] = -1
-
-    # Must have (lac and cid) or psc (psc-only to use in backfill)
-    if (data['lac'] == -1 or data['cid'] == -1) and data['psc'] == -1:
-        return None
-
-    # If the cell id >= 65536 then it must be a umts tower
-    if data['cid'] >= 65536 and data['radio'] == RADIO_TYPE['gsm']:
-        data['radio'] = RADIO_TYPE['umts']
-
-    return data
+    try:
+        validated = ValidCellSchema().deserialize(data, default_radio=default_radio)
+    except Invalid, e:
+        validated = None
+    return validated
 
 
 def normalized_cell_measure_dict(data, measure_radio=-1):

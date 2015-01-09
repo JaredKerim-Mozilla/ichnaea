@@ -1,3 +1,4 @@
+import copy
 import datetime
 from ichnaea.customjson import encode_datetime
 from datetime import timedelta
@@ -29,7 +30,7 @@ from ichnaea.data.constants import (
     VALID_WIFI_REGEX,
 )
 
-from colander import MappingSchema, SchemaNode, SequenceSchema, Float, Integer, String, OneOf, Invalid, DateTime, Range
+from colander import MappingSchema, SchemaNode, SequenceSchema, Boolean, Float, Integer, String, OneOf, Invalid, DateTime, Range
 
 from ichnaea.service.submit.schema import CellSchema, BaseMeasureSchema
 
@@ -74,25 +75,86 @@ class DefaultNode(SchemaNode):
             return self.missing
 
 
-class ValidCellMeasureSchema(CellSchema, BaseMeasureSchema):
+class LiteralDateTime(DateTime):
+
+    def deserialize(self, schema, cstruct):
+        if type(cstruct) == datetime.datetime:
+            return cstruct
+        return super(LiteralDateTime, self).deserialize(schema, cstruct)
+
+
+class TransformingSchema(MappingSchema):
+
+    def deserialize(self, data):
+        return super(TransformingSchema, self).deserialize(copy.copy(data))
+
+
+class ValidCellBaseSchema(TransformingSchema):
+    radio = DefaultNode(Integer(), missing=-1, validator=Range(MIN_RADIO_TYPE, MAX_RADIO_TYPE))
+    mcc = SchemaNode(Integer(), validator=Range(1, 999))
+    mnc = SchemaNode(Integer(), validator=Range(0, 32767))
+    lac = DefaultNode(Integer(), missing=-1, validator=Range(1, 65535))
+    cid = DefaultNode(Integer(), missing=-1, validator=Range(1, 268435455))
+    psc = DefaultNode(Integer(), missing=-1, validator=Range(0, 512))
+    lat = SchemaNode(Float(), missing=0.0, validator=Range(MIN_LAT, MAX_LAT))
+    lon = SchemaNode(Float(), missing=0.0, validator=Range(-180, 180))
+    signal = DefaultNode(Integer(), missing=0, validator=Range(-150, -1))
+    ta = DefaultNode(Integer(), missing=0, validator=Range(0, 63))
+    asu = DefaultNode(Integer(), missing=-1, validator=Range(0, 97))
+
+    def deserialize(self, data, default_radio=-1):
+        if data:
+            if 'radio' in data:
+                if isinstance(data['radio'], basestring):
+                    data['radio'] = RADIO_TYPE.get(data['radio'], -1)
+
+                # If a default radio was set, and we don't know, use it as fallback
+                if data['radio'] == -1 and default_radio != -1:
+                    data['radio'] = default_radio
+
+                # If the cell id >= 65536 then it must be a umts tower
+                if 'cid' in data and data['cid'] >= 65536 and data['radio'] == RADIO_TYPE['gsm']:
+                    data['radio'] = RADIO_TYPE['umts']
+
+            else:
+                data['radio'] = default_radio
+
+            # Treat cid=65535 without a valid lac as an unspecified value
+            if 'lac' in data and 'cid' in data and data['lac'] == -1 and data['cid'] == 65535:
+                data['cid'] = -1
+
+        return super(ValidCellBaseSchema, self).deserialize(data)
+
+    def validator(self, schema, data):
+        if data['mcc'] not in ALL_VALID_MCCS:
+            raise Invalid(schema, 'Check against the list of all known valid mccs')
+
+        if data['radio'] == RADIO_TYPE['cdma'] and (data['lac'] < 0 or data['cid'] < 0):
+            raise Invalid(schema, 'Skip CDMA towers missing lac or cid (no psc on CDMA exists to backfill using inference)')
+
+        if (data['radio'] in (RADIO_TYPE['gsm'], RADIO_TYPE['umts'], RADIO_TYPE['lte']) and data['mnc'] > 999):
+            raise Invalid(schema, 'Skip GSM/LTE/UMTS towers with an invalid MNC')
+
+        if (data['lac'] == -1 or data['cid'] == -1) and data['psc'] == -1:
+            raise Invalid(schema, 'Must have (lac and cid) or psc (psc-only to use in backfill)')
+
+
+class ValidCellSchema(ValidCellBaseSchema):
+    created = SchemaNode(LiteralDateTime(), missing=None)
+    modified = SchemaNode(LiteralDateTime(), missing=None)
+    changeable = SchemaNode(Boolean(), missing=True)
+    total_measures = SchemaNode(Integer(), missing=0)
+    range = SchemaNode(Integer(), missing=0)
+
+
+class ValidCellMeasureSchema(ValidCellBaseSchema):
     accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ACCURACY))
     altitude = DefaultNode(Float(), missing=0, validator=Range(MIN_ALTITUDE, MAX_ALTITUDE))
     altitude_accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ALTITUDE_ACCURACY))
-    asu = DefaultNode(Integer(), missing=-1, validator=Range(0, 97))
-    cid = DefaultNode(Integer(), missing=-1, validator=Range(1, 268435455))
     created = SchemaNode(String(), missing=None)
     heading = DefaultNode(Integer(), missing=-1, validator=Range(0, MAX_HEADING))
-    lac = DefaultNode(Integer(), missing=-1, validator=Range(1, 65535))
-    lat = SchemaNode(Float(), validator=Range(MIN_LAT, MAX_LAT))
-    lon = SchemaNode(Float(), validator=Range(-180, 180))
-    mcc = SchemaNode(Integer(), validator=Range(1, 999))
-    mnc = SchemaNode(Integer(), validator=Range(0, 32767))
-    psc = DefaultNode(Integer(), missing=-1, validator=Range(0, 512))
-    radio = DefaultNode(Integer(), missing=-1, validator=Range(MIN_RADIO_TYPE, MAX_RADIO_TYPE))
     report_id = SchemaNode(String(), missing='', preparer=lambda report_id: report_id or uuid.uuid1().hex)
-    signal = DefaultNode(Integer(), missing=0, validator=Range(-150, -1))
     speed = DefaultNode(Float(), missing=-1, validator=Range(0, MAX_SPEED))
-    ta = DefaultNode(Integer(), missing=0, validator=Range(0, 63))
     time = SchemaNode(String(), missing=None, preparer=lambda time: normalized_time(time) if time else datetime.date.today().strftime('%Y-%m-%d'))
 
     def deserialize(self, data):
