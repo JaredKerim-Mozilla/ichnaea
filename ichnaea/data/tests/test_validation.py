@@ -78,7 +78,7 @@ class TestValidation(TestCase):
                        lon=123.10, accuracy=120,
                        altitude=220, altitude_accuracy=10,
                        time=self.time)
-        wifi = dict(key="12:34:56:78:90:12",
+        wifi = dict(key='12:34:56:78:90:12',
                     frequency=2442,
                     channel=7,
                     signal=-85,
@@ -273,32 +273,32 @@ class TestValidation(TestCase):
                                5168, 5826, 6000]
 
         self.valid_key_pairs = [
-            ("12:34:56:78:90:12", "123456789012"),
-            ("12.34.56.78.90.12", "123456789012"),
-            ("1234::5678::9012", "123456789012"),
-            ("a2:b4:c6:d8:e0:f2", "a2b4c6d8e0f2"),
-            ("A2:B4:C6:D8:E0:F2", "a2b4c6d8e0f2"),
-            ("1-a3-b5-c7-D9-E1-F", "1a3b5c7d9e1f"),
-            ("fffffffffff0", "fffffffffff0"),
-            ("f00000000000", "f00000000000"),
-            ("000000-a00000", "000000a00000"),
-            ("f1234abcd345", "f1234abcd345"),
+            ('12:34:56:78:90:12', '123456789012'),
+            ('12.34.56.78.90.12', '123456789012'),
+            ('1234::5678::9012', '123456789012'),
+            ('a2:b4:c6:d8:e0:f2', 'a2b4c6d8e0f2'),
+            ('A2:B4:C6:D8:E0:F2', 'a2b4c6d8e0f2'),
+            ('1-a3-b5-c7-D9-E1-F', '1a3b5c7d9e1f'),
+            ('fffffffffff0', 'fffffffffff0'),
+            ('f00000000000', 'f00000000000'),
+            ('000000-a00000', '000000a00000'),
+            ('f1234abcd345', 'f1234abcd345'),
             # We considered but do not ban locally administered wifi keys
             # based on the U/L bit https://en.wikipedia.org/wiki/MAC_address
-            ("0a:00:00:00:00:00", "0a0000000000"),
+            ('0a:00:00:00:00:00', '0a0000000000'),
         ]
         self.invalid_keys = [
-            "ab:cd",
-            "ffffffffffff",
-            "000000000000",
-            "00000000001",
-            "00000000000g",
-            "12#34:56:78:90:12",
-            "[1234.56.78.9012]",
+            'ab:cd',
+            'ffffffffffff',
+            '000000000000',
+            '00000000001',
+            '00000000000g',
+            '12#34:56:78:90:12',
+            '[1234.56.78.9012]',
         ] + [WIFI_TEST_KEY] + [
-            c.join([str.format("{x:02x}", x=x)
+            c.join([str.format('{x:02x}', x=x)
                     for x in range(6)])
-            for c in "!@#$%^&*()_+={}\x01\x02\x03\r\n"]
+            for c in '!@#$%^&*()_+={}\x01\x02\x03\r\n']
 
         self.valid_signals = [-200, -100, -1]
         self.invalid_signals = [-300, -201, 0, 10]
@@ -393,10 +393,10 @@ class TestValidation(TestCase):
             (now, now_enc),
             (two_weeks_ago, two_weeks_ago.replace(**first_args)),
             (short_format, now_enc),
-            ("2011-01-01T11:12:13.456Z", now_enc),
-            ("2070-01-01T11:12:13.456Z", now_enc),
-            ("10-10-10", now_enc),
-            ("2011-10-13T.Z", now_enc),
+            ('2011-01-01T11:12:13.456Z', now_enc),
+            ('2070-01-01T11:12:13.456Z', now_enc),
+            ('10-10-10', now_enc),
+            ('2011-10-13T.Z', now_enc),
         ]
 
         for entry in entries:
@@ -406,8 +406,7 @@ class TestValidation(TestCase):
             self.assertEqual(
                 decode_datetime(normalized_time(in_)), expected)
 
-    def test_unhelpful_incomplete_cdma_cells(self):
-        # CDMA cell records must have MNC, MCC, LAC and CID filled in
+    def test_CDMA_cell_records_must_have_MNC_MCC_LAC_CID(self):
         entries = [
             # (data-in, data-out)
             ({'lac': 3, 'cid': 4}, {'lac': 3, 'cid': 4}),
@@ -421,41 +420,93 @@ class TestValidation(TestCase):
                 radio='cdma', **entry[0])
             self.check_normalized_cell(measure, cell, entry[1])
 
-    def test_unhelpful_incomplete_cells(self):
+    def test_records_fail_the_mcc_check(self):
         entries = [
-            # These records fail the mcc check
-            {"mcc": 0, "mnc": 2, "lac": 3, "cid": 4},
-            {"mcc": -1, "mnc": 2, "lac": 3, "cid": 4},
-            {"mcc": -2, "mnc": 2, "lac": 3, "cid": 4},
-            {"mcc": 2000, "mnc": 2, "lac": 3, "cid": 4},
+            {'mcc': 0, 'mnc': 2, 'lac': 3, 'cid': 4},
+            {'mcc': -1, 'mnc': 2, 'lac': 3, 'cid': 4},
+            {'mcc': -2, 'mnc': 2, 'lac': 3, 'cid': 4},
+            {'mcc': 2000, 'mnc': 2, 'lac': 3, 'cid': 4},
 
-            # These records fail the mnc check
-            {"mcc": FRANCE_MCC, "mnc": -1, "lac": 3, "cid": 4},
-            {"mcc": FRANCE_MCC, "mnc": -2, "lac": 3, "cid": 4},
-            {"mcc": FRANCE_MCC, "mnc": 33000, "lac": 3, "cid": 4},
+        ]
 
-            # These records fail the lac check
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": -1, "cid": 4},
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": -2, "cid": 4},
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": 65536, "cid": 4},
+        for entry in entries:
+            if 'radio' not in entry:
+                entry['radio'] = 'cdma'
+            (measure, cell) = self.make_cell_submission(**entry)
+            self.check_normalized_cell(measure, cell, None)
 
-            # These records fail the cid check
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": 3, "cid": -1},
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": 3, "cid": -2},
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": 3, "cid": 2 ** 28},
+    def test_records_fail_the_mnc_check(self):
+        entries = [
+            {'mcc': FRANCE_MCC, 'mnc': -1, 'lac': 3, 'cid': 4},
+            {'mcc': FRANCE_MCC, 'mnc': -2, 'lac': 3, 'cid': 4},
+            {'mcc': FRANCE_MCC, 'mnc': 33000, 'lac': 3, 'cid': 4},
 
-            # These records fail the (lac or cid) and psc check
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": -1, "cid": -1},
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": 3, "cid": -1},
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": -1, "cid": 4},
+        ]
 
-            # This fails the check for (unknown lac, cid=65535)
-            # and subsequently the check for missing psc
-            {"mcc": FRANCE_MCC, "mnc": 2, "lac": 0, "cid": 65535, "psc": -1},
+        for entry in entries:
+            if 'radio' not in entry:
+                entry['radio'] = 'cdma'
+            (measure, cell) = self.make_cell_submission(**entry)
+            self.check_normalized_cell(measure, cell, None)
 
-            # This fails because it has an MNC above 1000 for a GSM network
-            {"mcc": FRANCE_MCC, "mnc": 1001, "lac": 3, "cid": 4,
-             "radio": "gsm"},
+    def test_records_fail_the_lac_check(self):
+        entries = [
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': -1, 'cid': 4},
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': -2, 'cid': 4},
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': 65536, 'cid': 4},
+
+        ]
+
+        for entry in entries:
+            if 'radio' not in entry:
+                entry['radio'] = 'cdma'
+            (measure, cell) = self.make_cell_submission(**entry)
+            self.check_normalized_cell(measure, cell, None)
+
+    def test_records_fail_the_cid_check(self):
+        entries = [
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': 3, 'cid': -1},
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': 3, 'cid': -2},
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': 3, 'cid': 2 ** 28},
+
+        ]
+
+        for entry in entries:
+            if 'radio' not in entry:
+                entry['radio'] = 'cdma'
+            (measure, cell) = self.make_cell_submission(**entry)
+            self.check_normalized_cell(measure, cell, None)
+
+    def test_records_fail_the_lac_or_cid_and_psc_check(self):
+        entries = [
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': -1, 'cid': -1},
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': 3, 'cid': -1},
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': -1, 'cid': 4},
+
+        ]
+
+        for entry in entries:
+            if 'radio' not in entry:
+                entry['radio'] = 'cdma'
+            (measure, cell) = self.make_cell_submission(**entry)
+            self.check_normalized_cell(measure, cell, None)
+
+    def test_fails_the_check_for_unknown_lac_cid_is_65535_and_missing_psc(self):
+        entries = [
+            {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': 0, 'cid': 65535, 'psc': -1},
+
+        ]
+
+        for entry in entries:
+            if 'radio' not in entry:
+                entry['radio'] = 'cdma'
+            (measure, cell) = self.make_cell_submission(**entry)
+            self.check_normalized_cell(measure, cell, None)
+
+    def test_fails_because_it_has_an_MNC_above_1000_for_a_GSM_network(self):
+        entries = [
+            {'mcc': FRANCE_MCC, 'mnc': 1001, 'lac': 3, 'cid': 4,
+             'radio': 'gsm'},
         ]
 
         for entry in entries:
@@ -465,5 +516,5 @@ class TestValidation(TestCase):
             self.check_normalized_cell(measure, cell, None)
 
     def test_wrong_radio_type_is_corrected_for_large_cid(self):
-        measure, cell = self.make_cell_submission(cid=65536, radio="gsm")
+        measure, cell = self.make_cell_submission(cid=65536, radio='gsm')
         self.check_normalized_cell(measure, cell, {'radio': 2})

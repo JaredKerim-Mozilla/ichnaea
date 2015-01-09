@@ -29,6 +29,9 @@ from ichnaea.data.constants import (
     VALID_WIFI_REGEX,
 )
 
+from colander import Invalid
+from ichnaea.data.schema import ValidCellMeasureSchema
+
 
 def valid_wifi_pattern(key):
     return INVALID_WIFI_REGEX.match(key) and \
@@ -74,6 +77,7 @@ def normalized_dict_value(data, k, lo, hi, default=REQUIRED):
     """
     if k not in data or data[k] < lo or data[k] > hi:
         if default is REQUIRED:
+            print '{field} is required between {lo} and {hi}, found value: {value}'.format(field=k, lo=lo, hi=hi, value=data[k])
             return None
         else:
             return default
@@ -255,29 +259,7 @@ def normalized_cell_measure_dict(data, measure_radio=-1):
     Returns a normalized copy of the provided cell-measure dict data,
     or None if the dict was invalid.
     """
-    data = normalized_cell_dict(data, default_radio=measure_radio)
-    data = normalized_measure_dict(data)
-
-    location_is_in_country = geocalc.location_is_in_country
-    if data is not None:
-        # Lat/lon must be inside one of the bounding boxes for the MCC.
-        lat = float(data['lat'])
-        lon = float(data['lon'])
-        if not any([location_is_in_country(lat, lon, c.alpha2, 1)
-                    for c in mobile_codes.mcc(str(data['mcc']))]):
-            data = None
-
-    if data is None:
+    try:
+        return ValidCellMeasureSchema().deserialize(data)
+    except Invalid, e:
         return None
-
-    if 'asu' in data and 'signal' in data:
-        # some clients sendata us a dBm value in the asu field, move it
-        # over to the signal field before hitting validation
-        if data['asu'] < -1 and data['signal'] == 0:
-            data['signal'] = data['asu']
-            data['asu'] = -1
-
-    return normalized_dict(
-        data, dict(asu=(0, 97, -1),
-                signal=(-150, -1, 0),
-                ta=(0, 63, 0)))
