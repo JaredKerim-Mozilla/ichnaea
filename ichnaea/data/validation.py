@@ -4,9 +4,7 @@ import uuid
 from colander import iso8601
 import mobile_codes
 
-from ichnaea.customjson import (
-    encode_datetime,
-)
+from ichnaea.customjson import encode_datetime
 from ichnaea import geocalc
 from ichnaea.models import (
     MAX_RADIO_TYPE,
@@ -260,6 +258,7 @@ def normalized_cell_measure_dict(data, measure_radio=-1):
     or None if the dict was invalid.
     """
     try:
-        return ValidCellMeasureSchema().deserialize(data)
+        validated = ValidCellMeasureSchema().deserialize(data)
     except Invalid, e:
-        return None
+        validated = None
+    return validated
