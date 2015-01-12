@@ -120,6 +120,7 @@ class ValidCellBaseSchema(TransformingSchema):
                 data['radio'] = default_radio
 
             # Treat cid=65535 without a valid lac as an unspecified value
+            # Is this useful if having lac=-1 sets off a validation error anyways?
             if 'lac' in data and 'cid' in data and data['lac'] == -1 and data['cid'] == 65535:
                 data['cid'] = -1
 
@@ -163,10 +164,6 @@ class ValidCellMeasureSchema(ValidCellBaseSchema):
             # If so we look it up in RADIO_TYPE
             if type(data.get('radio', None)) == str:
                 data['radio'] = RADIO_TYPE.get(data['radio'], -1)
-
-            # If the cell id >= 65536 then it must be a umts tower
-            if data.get('cid', 0) >= 65536 and data.get('radio', -1) == RADIO_TYPE['gsm']:
-                data['radio'] = RADIO_TYPE['umts']
 
             # Sometimes the asu and signal fields are swapped
             if data.get('asu', 0) < -1 and data.get('signal', -1) == 0:
