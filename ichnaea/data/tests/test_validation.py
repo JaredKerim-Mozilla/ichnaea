@@ -256,6 +256,10 @@ class TestValidation(TestCase):
         (measure, cell) = self.make_cell_submission(asu=-75, signal=0)
         self.check_normalized_cell(measure, cell, {'signal': -75})
 
+    def test_cid_65535_without_a_valid_lac_sets_cid_to_invalid(self):
+        (measure, cell) = self.make_cell_submission(cid=65535, lac=-1, psc=1)
+        self.check_normalized_cell(measure, cell, {'cid': -1})
+
     def test_normalize_wifis(self):
         self.valid_channels = [1, 20, 45, 165]
         self.invalid_channels = [-10, -1, 201, 2500]

@@ -120,7 +120,6 @@ class ValidCellBaseSchema(TransformingSchema):
                 data['radio'] = default_radio
 
             # Treat cid=65535 without a valid lac as an unspecified value
-            # Is this useful if having lac=-1 sets off a validation error anyways?
             if 'lac' in data and 'cid' in data and data['lac'] == -1 and data['cid'] == 65535:
                 data['cid'] = -1
 
