@@ -112,13 +112,13 @@ class WifiKeyNode(SchemaNode):
             raise Invalid(node, 'Invalid wifi key')
 
 
-class TransformingSchema(MappingSchema):
+class CopyingSchema(MappingSchema):
 
     def deserialize(self, data):
-        return super(TransformingSchema, self).deserialize(copy.copy(data))
+        return super(CopyingSchema, self).deserialize(copy.copy(data))
 
 
-class ValidMeasureSchema(TransformingSchema):
+class ValidMeasureSchema(CopyingSchema):
     lat = SchemaNode(Float(), missing=0.0, validator=Range(MIN_LAT, MAX_LAT))
     lon = SchemaNode(Float(), missing=0.0, validator=Range(-180, 180))
     accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ACCURACY))
