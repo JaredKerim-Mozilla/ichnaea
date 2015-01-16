@@ -8,9 +8,9 @@ from ichnaea.customjson import (
 )
 from ichnaea.data.validation import (
     normalized_cell_measure_dict,
-    normalized_time,
     normalized_wifi_measure_dict,
 )
+from ichnaea.data.schema import normalized_time
 from ichnaea.data.constants import WIFI_TEST_KEY
 from ichnaea.tests.base import TestCase
 from ichnaea.tests.base import (
@@ -21,11 +21,14 @@ from ichnaea.tests.base import (
 from ichnaea import util
 
 
-class TestValidation(TestCase):
+class ValidationTest(TestCase):
 
     @classmethod
     def setUpClass(cls):
         cls.time = util.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')
+
+
+class TestCellValidation(ValidationTest):
 
     def check_normalized_cell(self, measure, cell, expect):
         d = measure.copy()
@@ -45,18 +48,6 @@ class TestValidation(TestCase):
                         actual=result[k]))
         return result
 
-    def check_normalized_wifi(self, measure, wifi, expect):
-        d = measure.copy()
-        d.update(wifi)
-        result = normalized_wifi_measure_dict(d)
-
-        if expect is None:
-            self.assertEqual(result, expect)
-        else:
-            for (k, v) in expect.items():
-                self.assertEqual(result[k], v)
-        return result
-
     def make_cell_submission(self, **kw):
         measure = dict(radio='umts',
                        lat=PARIS_LAT,
@@ -71,24 +62,6 @@ class TestValidation(TestCase):
             else:
                 cell[k] = v
         return (measure, cell)
-
-    def make_wifi_submission(self, **kw):
-        measure = dict(radio='',
-                       lat=49.25,
-                       lon=123.10, accuracy=120,
-                       altitude=220, altitude_accuracy=10,
-                       time=self.time)
-        wifi = dict(key='12:34:56:78:90:12',
-                    frequency=2442,
-                    channel=7,
-                    signal=-85,
-                    signalToNoiseRatio=37)
-        for (k, v) in kw.items():
-            if k in measure:
-                measure[k] = v
-            else:
-                wifi[k] = v
-        return (measure, wifi)
 
     def setUp(self):
         self.radio_pairs = [('gsm', 0),
@@ -260,156 +233,6 @@ class TestValidation(TestCase):
         (measure, cell) = self.make_cell_submission(cid=65535, lac=-1, psc=1)
         self.check_normalized_cell(measure, cell, {'cid': -1})
 
-    def test_normalize_wifis(self):
-        self.valid_channels = [1, 20, 45, 165]
-        self.invalid_channels = [-10, -1, 201, 2500]
-
-        self.valid_frequency_channels = [
-            (2412, 1),
-            (2427, 4),
-            (2472, 13),
-            (5170, 34),
-            (5200, 40),
-            (5805, 161),
-            (5825, 165)
-        ]
-        self.invalid_frequencies = [-1, 2000, 2411, 2473,
-                               5168, 5826, 6000]
-
-        self.valid_key_pairs = [
-            ('12:34:56:78:90:12', '123456789012'),
-            ('12.34.56.78.90.12', '123456789012'),
-            ('1234::5678::9012', '123456789012'),
-            ('a2:b4:c6:d8:e0:f2', 'a2b4c6d8e0f2'),
-            ('A2:B4:C6:D8:E0:F2', 'a2b4c6d8e0f2'),
-            ('1-a3-b5-c7-D9-E1-F', '1a3b5c7d9e1f'),
-            ('fffffffffff0', 'fffffffffff0'),
-            ('f00000000000', 'f00000000000'),
-            ('000000-a00000', '000000a00000'),
-            ('f1234abcd345', 'f1234abcd345'),
-            # We considered but do not ban locally administered wifi keys
-            # based on the U/L bit https://en.wikipedia.org/wiki/MAC_address
-            ('0a:00:00:00:00:00', '0a0000000000'),
-        ]
-        self.invalid_keys = [
-            'ab:cd',
-            'ffffffffffff',
-            '000000000000',
-            '00000000001',
-            '00000000000g',
-            '12#34:56:78:90:12',
-            '[1234.56.78.9012]',
-        ] + [WIFI_TEST_KEY] + [
-            c.join([str.format('{x:02x}', x=x)
-                    for x in range(6)])
-            for c in '!@#$%^&*()_+={}\x01\x02\x03\r\n']
-
-        self.valid_signals = [-200, -100, -1]
-        self.invalid_signals = [-300, -201, 0, 10]
-
-        self.valid_snrs = [0, 12, 100]
-        self.invalid_snrs = [-1, -50, 101]
-
-        # Check valid keys
-        for (k1, k2) in self.valid_key_pairs:
-            (measure, wifi) = self.make_wifi_submission(key=k1)
-            self.check_normalized_wifi(measure, wifi, dict(key=k2))
-
-        # Check invalid keys
-        for k in self.invalid_keys:
-            (measure, wifi) = self.make_wifi_submission(key=k)
-            self.check_normalized_wifi(measure, wifi, None)
-
-        # Check valid frequency/channel pairs together and
-        # individually.
-        for (f, c) in self.valid_frequency_channels:
-            (measure, wifi) = self.make_wifi_submission(
-                frequency=f, channel=c)
-            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
-            self.assertFalse('frequency' in wifi)
-
-            (measure, wifi) = self.make_wifi_submission(
-                frequency=f, channel=0)
-            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
-            self.assertFalse('frequency' in wifi)
-
-            (measure, wifi) = self.make_wifi_submission(
-                frequency=0, channel=c)
-            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
-            self.assertFalse('frequency' in wifi)
-
-        # Check valid signals
-        for s in self.valid_signals:
-            (measure, wifi) = self.make_wifi_submission(signal=s)
-            self.check_normalized_wifi(measure, wifi, dict(signal=s))
-
-        # Check invalid signals
-        for s in self.invalid_signals:
-            (measure, wifi) = self.make_wifi_submission(signal=s)
-            self.check_normalized_wifi(measure, wifi, dict(signal=0))
-
-        # Check valid snrs
-        for s in self.valid_snrs:
-            (measure, wifi) = self.make_wifi_submission(signalToNoiseRatio=s)
-            self.check_normalized_wifi(
-                measure, wifi, dict(signalToNoiseRatio=s))
-
-        # Check invalid snrs
-        for s in self.invalid_snrs:
-            (measure, wifi) = self.make_wifi_submission(signalToNoiseRatio=s)
-            self.check_normalized_wifi(
-                measure, wifi, dict(signalToNoiseRatio=0))
-
-        # Check valid channels
-        for c in self.valid_channels:
-            (measure, wifi) = self.make_wifi_submission(channel=c)
-            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
-            self.assertFalse('frequency' in wifi)
-
-        # Check invalid channels are corrected by valid frequency
-        for c in self.invalid_channels:
-            (measure, wifi) = self.make_wifi_submission()
-            chan = wifi['channel']
-            wifi['channel'] = c
-            wifi = self.check_normalized_wifi(measure, wifi,
-                                              dict(channel=chan))
-            self.assertFalse('frequency' in wifi)
-
-        # Check invalid frequencies have no effect and are
-        # dropped anyways
-        for f in self.invalid_frequencies:
-            (measure, wifi) = self.make_wifi_submission(frequency=f)
-            chan = wifi['channel']
-            wifi = self.check_normalized_wifi(measure, wifi,
-                                              dict(channel=chan))
-            self.assertFalse('frequency' in wifi)
-
-    def test_normalize_time(self):
-        now = util.utcnow()
-        first_args = dict(day=1, hour=0, minute=0, second=0,
-                          microsecond=0, tzinfo=UTC)
-        now_enc = now.replace(**first_args)
-        two_weeks_ago = now - timedelta(14)
-        short_format = now.date().isoformat()
-
-        entries = [
-            ('', now_enc),
-            (now, now_enc),
-            (two_weeks_ago, two_weeks_ago.replace(**first_args)),
-            (short_format, now_enc),
-            ('2011-01-01T11:12:13.456Z', now_enc),
-            ('2070-01-01T11:12:13.456Z', now_enc),
-            ('10-10-10', now_enc),
-            ('2011-10-13T.Z', now_enc),
-        ]
-
-        for entry in entries:
-            in_, expected = entry
-            if not isinstance(in_, str):
-                in_ = encode_datetime(in_)
-            self.assertEqual(
-                decode_datetime(normalized_time(in_)), expected)
-
     def test_CDMA_cell_records_must_have_MNC_MCC_LAC_CID(self):
         entries = [
             # (data-in, data-out)
@@ -522,3 +345,188 @@ class TestValidation(TestCase):
     def test_wrong_radio_type_is_corrected_for_large_cid(self):
         measure, cell = self.make_cell_submission(cid=65536, radio='gsm')
         self.check_normalized_cell(measure, cell, {'radio': 2})
+
+
+class TestWifiValidation(ValidationTest):
+
+    def check_normalized_wifi(self, measure, wifi, expect):
+        d = measure.copy()
+        d.update(wifi)
+        result = normalized_wifi_measure_dict(d)
+
+        if expect is None:
+            self.assertEqual(result, expect)
+        else:
+            for (k, v) in expect.items():
+                self.assertEqual(result[k], v)
+        return result
+
+    def make_wifi_submission(self, **kwargs):
+        measure = {
+            'accuracy': 120,
+            'altitude': 220,
+            'altitude_accuracy': 10,
+            'lat': 49.25,
+            'lon': 123.10,
+            'radio': '',
+            'time': self.time,
+        }
+        wifi = dict(key='12:34:56:78:90:12',
+                    frequency=2442,
+                    channel=7,
+                    signal=-85,
+                    signalToNoiseRatio=37)
+        for (k, v) in kwargs.items():
+            if k in measure:
+                measure[k] = v
+            else:
+                wifi[k] = v
+        return (measure, wifi)
+
+    def setUp(self):
+        self.valid_channels = [1, 20, 45, 165]
+        self.invalid_channels = [-10, -1, 201, 2500]
+
+        self.valid_frequency_channels = [
+            (2412, 1),
+            (2427, 4),
+            (2472, 13),
+            (5170, 34),
+            (5200, 40),
+            (5805, 161),
+            (5825, 165)
+        ]
+        self.invalid_frequencies = [-1, 2000, 2411, 2473,
+                               5168, 5826, 6000]
+
+        self.valid_key_pairs = [
+            ('12:34:56:78:90:12', '123456789012'),
+            ('12.34.56.78.90.12', '123456789012'),
+            ('1234::5678::9012', '123456789012'),
+            ('a2:b4:c6:d8:e0:f2', 'a2b4c6d8e0f2'),
+            ('A2:B4:C6:D8:E0:F2', 'a2b4c6d8e0f2'),
+            ('1-a3-b5-c7-D9-E1-F', '1a3b5c7d9e1f'),
+            ('fffffffffff0', 'fffffffffff0'),
+            ('f00000000000', 'f00000000000'),
+            ('000000-a00000', '000000a00000'),
+            ('f1234abcd345', 'f1234abcd345'),
+            # We considered but do not ban locally administered wifi keys
+            # based on the U/L bit https://en.wikipedia.org/wiki/MAC_address
+            ('0a:00:00:00:00:00', '0a0000000000'),
+        ]
+        self.invalid_keys = [
+            'ab:cd',
+            'ffffffffffff',
+            '000000000000',
+            '00000000001',
+            '00000000000g',
+            '12#34:56:78:90:12',
+            '[1234.56.78.9012]',
+        ] + [WIFI_TEST_KEY] + [
+            c.join([str.format('{x:02x}', x=x)
+                    for x in range(6)])
+            for c in '!@#$%^&*()_+={}\x01\x02\x03\r\n']
+
+        self.valid_signals = [-200, -100, -1]
+        self.invalid_signals = [-300, -201, 0, 10]
+
+        self.valid_snrs = [0, 12, 100]
+        self.invalid_snrs = [-1, -50, 101]
+
+    def test_valid_keys(self):
+        for (k1, k2) in self.valid_key_pairs:
+            (measure, wifi) = self.make_wifi_submission(key=k1)
+            self.check_normalized_wifi(measure, wifi, dict(key=k2))
+
+    def test_invalid_keys(self):
+        for k in self.invalid_keys:
+            (measure, wifi) = self.make_wifi_submission(key=k)
+            self.check_normalized_wifi(measure, wifi, None)
+
+    def test_valid_frequency_channel_pairs_together_and_individually(self):
+        for (f, c) in self.valid_frequency_channels:
+            (measure, wifi) = self.make_wifi_submission(
+                frequency=f, channel=c)
+            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
+            self.assertFalse('frequency' in wifi)
+
+            (measure, wifi) = self.make_wifi_submission(
+                frequency=f, channel=0)
+            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
+            self.assertFalse('frequency' in wifi)
+
+            (measure, wifi) = self.make_wifi_submission(
+                frequency=0, channel=c)
+            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
+            self.assertFalse('frequency' in wifi)
+
+    def test_valid_signals(self):
+        for s in self.valid_signals:
+            (measure, wifi) = self.make_wifi_submission(signal=s)
+            self.check_normalized_wifi(measure, wifi, dict(signal=s))
+
+    def test_invalid_signals(self):
+        for s in self.invalid_signals:
+            (measure, wifi) = self.make_wifi_submission(signal=s)
+            self.check_normalized_wifi(measure, wifi, dict(signal=0))
+
+    def test_valid_snrs(self):
+        for s in self.valid_snrs:
+            (measure, wifi) = self.make_wifi_submission(signalToNoiseRatio=s)
+            self.check_normalized_wifi(
+                measure, wifi, dict(signalToNoiseRatio=s))
+
+    def test_invalid_snrs(self):
+        for s in self.invalid_snrs:
+            (measure, wifi) = self.make_wifi_submission(signalToNoiseRatio=s)
+            self.check_normalized_wifi(
+                measure, wifi, dict(signalToNoiseRatio=0))
+
+    def test_valid_channels(self):
+        for c in self.valid_channels:
+            (measure, wifi) = self.make_wifi_submission(channel=c)
+            wifi = self.check_normalized_wifi(measure, wifi, dict(channel=c))
+            self.assertFalse('frequency' in wifi)
+
+    def test_invalid_channels_are_corrected_by_valid_frequency(self):
+        for c in self.invalid_channels:
+            (measure, wifi) = self.make_wifi_submission()
+            chan = wifi['channel']
+            wifi['channel'] = c
+            wifi = self.check_normalized_wifi(measure, wifi,
+                                              dict(channel=chan))
+            self.assertFalse('frequency' in wifi)
+
+    def test_invalid_frequencies_have_no_effect_and_are_dropped_anyways(self):
+        for f in self.invalid_frequencies:
+            (measure, wifi) = self.make_wifi_submission(frequency=f)
+            chan = wifi['channel']
+            wifi = self.check_normalized_wifi(measure, wifi,
+                                              dict(channel=chan))
+            self.assertFalse('frequency' in wifi)
+
+    def test_normalize_time(self):
+        now = util.utcnow()
+        first_args = dict(day=1, hour=0, minute=0, second=0,
+                          microsecond=0, tzinfo=UTC)
+        now_enc = now.replace(**first_args)
+        two_weeks_ago = now - timedelta(14)
+        short_format = now.date().isoformat()
+
+        entries = [
+            ('', now_enc),
+            (now, now_enc),
+            (two_weeks_ago, two_weeks_ago.replace(**first_args)),
+            (short_format, now_enc),
+            ('2011-01-01T11:12:13.456Z', now_enc),
+            ('2070-01-01T11:12:13.456Z', now_enc),
+            ('10-10-10', now_enc),
+            ('2011-10-13T.Z', now_enc),
+        ]
+
+        for entry in entries:
+            in_, expected = entry
+            if not isinstance(in_, str):
+                in_ = encode_datetime(in_)
+            self.assertEqual(
+                decode_datetime(normalized_time(in_)), expected)

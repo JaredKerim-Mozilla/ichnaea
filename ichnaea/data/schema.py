@@ -83,24 +83,98 @@ class LiteralDateTime(DateTime):
         return super(LiteralDateTime, self).deserialize(schema, cstruct)
 
 
+class DateTimeToString(String):
+
+    def deserialize(self, schema, cstruct):
+        if type(cstruct) == datetime.datetime:
+            cstruct = cstruct.strftime('%Y-%m-%d')
+        return super(DateTimeToString, self).deserialize(schema, cstruct)
+
+
+def normalized_wifi_key(key):
+    if ":" in key or "-" in key or "." in key:
+        key = key.replace(":", "").replace("-", "").replace(".", "")
+    return key.lower()
+
+
+def valid_wifi_pattern(key):
+    return INVALID_WIFI_REGEX.match(key) and \
+        VALID_WIFI_REGEX.match(key) and len(key) == 12
+
+
+class WifiKeyNode(SchemaNode):
+
+    def preparer(self, cstruct):
+        return normalized_wifi_key(cstruct)
+
+    def validator(self, node, cstruct):
+        if not valid_wifi_pattern(cstruct):
+            raise Invalid(node, 'Invalid wifi key')
+
+
 class TransformingSchema(MappingSchema):
 
     def deserialize(self, data):
         return super(TransformingSchema, self).deserialize(copy.copy(data))
 
 
-class ValidCellBaseSchema(TransformingSchema):
-    radio = DefaultNode(Integer(), missing=-1, validator=Range(MIN_RADIO_TYPE, MAX_RADIO_TYPE))
-    mcc = SchemaNode(Integer(), validator=Range(1, 999))
-    mnc = SchemaNode(Integer(), validator=Range(0, 32767))
-    lac = DefaultNode(Integer(), missing=-1, validator=Range(1, 65535))
-    cid = DefaultNode(Integer(), missing=-1, validator=Range(1, 268435455))
-    psc = DefaultNode(Integer(), missing=-1, validator=Range(0, 512))
+class ValidMeasureSchema(TransformingSchema):
     lat = SchemaNode(Float(), missing=0.0, validator=Range(MIN_LAT, MAX_LAT))
     lon = SchemaNode(Float(), missing=0.0, validator=Range(-180, 180))
+    accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ACCURACY))
+    altitude = DefaultNode(Float(), missing=0, validator=Range(MIN_ALTITUDE, MAX_ALTITUDE))
+    altitude_accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ALTITUDE_ACCURACY))
+    heading = DefaultNode(Float(), missing=-1, validator=Range(0, MAX_HEADING))
+    speed = DefaultNode(Float(), missing=-1, validator=Range(0, MAX_SPEED))
+    report_id = SchemaNode(String(), missing='', preparer=lambda report_id: report_id or uuid.uuid1().hex)
+    time = SchemaNode(DateTimeToString(), missing=None, preparer=lambda time: normalized_time(time) if time else datetime.date.today().strftime('%Y-%m-%d'))
+
+
+class ValidWifiSchema(ValidMeasureSchema):
+    signal = DefaultNode(Integer(), missing=0, validator=Range(-200, -1))
+    signalToNoiseRatio = DefaultNode(Integer(), missing=0, validator=Range(0, 100))
+    key = WifiKeyNode(String()) #, preparer=lambda key: normalized_wifi_key(key))
+    channel = SchemaNode(Integer(), validator=Range(0, 166))
+
+    def deserialize(self, data):
+        if data:
+            channel = int(data.get('channel', 0))
+
+            if not 0 < channel < 166:
+                # if no explicit channel was given, calculate
+                freq = data.get('frequency', 0)
+
+                if 2411 < freq < 2473:
+                    # 2.4 GHz band
+                    data['channel'] = (freq - 2407) // 5
+
+                elif 5169 < freq < 5826:
+                    # 5 GHz band
+                    data['channel'] = (freq - 5000) // 5
+
+                else:
+                    data['channel'] = 0
+
+            data.pop('frequency', None)
+            data.pop('radio', None)
+
+        return super(ValidWifiSchema, self).deserialize(data)
+
+
+class ValidWifiMeasureSchema(ValidWifiSchema, ValidMeasureSchema):
+    pass
+
+
+class ValidCellBaseSchema(ValidMeasureSchema):
+    asu = DefaultNode(Integer(), missing=-1, validator=Range(0, 97))
+    cid = DefaultNode(Integer(), missing=-1, validator=Range(1, 268435455))
+    lac = DefaultNode(Integer(), missing=-1, validator=Range(1, 65535))
+    mcc = SchemaNode(Integer(), validator=Range(1, 999))
+    mnc = SchemaNode(Integer(), validator=Range(0, 32767))
+    psc = DefaultNode(Integer(), missing=-1, validator=Range(0, 512))
+    radio = DefaultNode(Integer(), missing=-1, validator=Range(MIN_RADIO_TYPE, MAX_RADIO_TYPE))
     signal = DefaultNode(Integer(), missing=0, validator=Range(-150, -1))
     ta = DefaultNode(Integer(), missing=0, validator=Range(0, 63))
-    asu = DefaultNode(Integer(), missing=-1, validator=Range(0, 97))
 
     def deserialize(self, data, default_radio=-1):
         if data:
@@ -148,14 +222,7 @@ class ValidCellSchema(ValidCellBaseSchema):
 
 
 class ValidCellMeasureSchema(ValidCellBaseSchema):
-    accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ACCURACY))
-    altitude = DefaultNode(Float(), missing=0, validator=Range(MIN_ALTITUDE, MAX_ALTITUDE))
-    altitude_accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ALTITUDE_ACCURACY))
     created = SchemaNode(String(), missing=None)
-    heading = DefaultNode(Integer(), missing=-1, validator=Range(0, MAX_HEADING))
-    report_id = SchemaNode(String(), missing='', preparer=lambda report_id: report_id or uuid.uuid1().hex)
-    speed = DefaultNode(Float(), missing=-1, validator=Range(0, MAX_SPEED))
-    time = SchemaNode(String(), missing=None, preparer=lambda time: normalized_time(time) if time else datetime.date.today().strftime('%Y-%m-%d'))
 
     def deserialize(self, data):
         if data:
