@@ -16,7 +16,6 @@ from ichnaea.models import (
 )
 
 from ichnaea.data.constants import (
-    REQUIRED,
     MAX_LAT,
     MIN_LAT,
     MAX_ACCURACY,
@@ -30,11 +29,17 @@ from ichnaea.data.constants import (
     VALID_WIFI_REGEX,
 )
 
-from colander import MappingSchema, SchemaNode, SequenceSchema, Boolean, Float, Integer, String, OneOf, Invalid, DateTime, Range
-
-from ichnaea.service.submit.schema import CellSchema, BaseMeasureSchema
-
-from ichnaea.models import RADIO_TYPE_KEYS
+from colander import (
+    MappingSchema,
+    SchemaNode,
+    Boolean,
+    Float,
+    Integer,
+    String,
+    Invalid,
+    DateTime,
+    Range,
+)
 
 
 def normalized_time(time):
@@ -112,6 +117,21 @@ class WifiKeyNode(SchemaNode):
             raise Invalid(node, 'Invalid wifi key')
 
 
+class ReportNode(SchemaNode):
+
+    def preparer(self, cstruct):
+        return cstruct or uuid.uuid1().hex
+
+
+class TimeNode(SchemaNode):
+
+    def preparer(self, cstruct):
+        if cstruct:
+            return normalized_time(cstruct)
+        else:
+            return datetime.date.today().strftime('%Y-%m-%d')
+
+
 class CopyingSchema(MappingSchema):
 
     def deserialize(self, data):
@@ -121,19 +141,23 @@ class CopyingSchema(MappingSchema):
 class ValidMeasureSchema(CopyingSchema):
     lat = SchemaNode(Float(), missing=0.0, validator=Range(MIN_LAT, MAX_LAT))
     lon = SchemaNode(Float(), missing=0.0, validator=Range(-180, 180))
-    accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ACCURACY))
-    altitude = DefaultNode(Float(), missing=0, validator=Range(MIN_ALTITUDE, MAX_ALTITUDE))
-    altitude_accuracy = DefaultNode(Float(), missing=0, validator=Range(0, MAX_ALTITUDE_ACCURACY))
+    accuracy = DefaultNode(
+        Float(), missing=0, validator=Range(0, MAX_ACCURACY))
+    altitude = DefaultNode(
+        Float(), missing=0, validator=Range(MIN_ALTITUDE, MAX_ALTITUDE))
+    altitude_accuracy = DefaultNode(
+        Float(), missing=0, validator=Range(0, MAX_ALTITUDE_ACCURACY))
     heading = DefaultNode(Float(), missing=-1, validator=Range(0, MAX_HEADING))
     speed = DefaultNode(Float(), missing=-1, validator=Range(0, MAX_SPEED))
-    report_id = SchemaNode(String(), missing='', preparer=lambda report_id: report_id or uuid.uuid1().hex)
-    time = SchemaNode(DateTimeToString(), missing=None, preparer=lambda time: normalized_time(time) if time else datetime.date.today().strftime('%Y-%m-%d'))
+    report_id = ReportNode(String(), missing='')
+    time = TimeNode(DateTimeToString(), missing=None)
 
 
 class ValidWifiSchema(ValidMeasureSchema):
     signal = DefaultNode(Integer(), missing=0, validator=Range(-200, -1))
-    signalToNoiseRatio = DefaultNode(Integer(), missing=0, validator=Range(0, 100))
-    key = WifiKeyNode(String()) #, preparer=lambda key: normalized_wifi_key(key))
+    signalToNoiseRatio = DefaultNode(
+        Integer(), missing=0, validator=Range(0, 100))
+    key = WifiKeyNode(String())
     channel = SchemaNode(Integer(), validator=Range(0, 166))
 
     def deserialize(self, data):
@@ -172,7 +196,8 @@ class ValidCellBaseSchema(ValidMeasureSchema):
     mcc = SchemaNode(Integer(), validator=Range(1, 999))
     mnc = SchemaNode(Integer(), validator=Range(0, 32767))
     psc = DefaultNode(Integer(), missing=-1, validator=Range(0, 512))
-    radio = DefaultNode(Integer(), missing=-1, validator=Range(MIN_RADIO_TYPE, MAX_RADIO_TYPE))
+    radio = DefaultNode(
+        Integer(), missing=-1, validator=Range(MIN_RADIO_TYPE, MAX_RADIO_TYPE))
     signal = DefaultNode(Integer(), missing=0, validator=Range(-150, -1))
     ta = DefaultNode(Integer(), missing=0, validator=Range(0, 63))
 
@@ -182,35 +207,45 @@ class ValidCellBaseSchema(ValidMeasureSchema):
                 if isinstance(data['radio'], basestring):
                     data['radio'] = RADIO_TYPE.get(data['radio'], -1)
 
-                # If a default radio was set, and we don't know, use it as fallback
+                # If a default radio was set,
+                # and we don't know, use it as fallback
                 if data['radio'] == -1 and default_radio != -1:
                     data['radio'] = default_radio
 
                 # If the cell id >= 65536 then it must be a umts tower
-                if 'cid' in data and data['cid'] >= 65536 and data['radio'] == RADIO_TYPE['gsm']:
+                if (data.get('cid', 0) >= 65536
+                        and data['radio'] == RADIO_TYPE['gsm']):
                     data['radio'] = RADIO_TYPE['umts']
 
             else:
                 data['radio'] = default_radio
 
             # Treat cid=65535 without a valid lac as an unspecified value
-            if 'lac' in data and 'cid' in data and data['lac'] == -1 and data['cid'] == 65535:
+            if data.get('lac', -1) == -1 and data.get('cid', -1) == 65535:
                 data['cid'] = -1
 
         return super(ValidCellBaseSchema, self).deserialize(data)
 
     def validator(self, schema, data):
         if data['mcc'] not in ALL_VALID_MCCS:
-            raise Invalid(schema, 'Check against the list of all known valid mccs')
+            raise Invalid(
+                schema, 'Check against the list of all known valid mccs')
 
-        if data['radio'] == RADIO_TYPE['cdma'] and (data['lac'] < 0 or data['cid'] < 0):
-            raise Invalid(schema, 'Skip CDMA towers missing lac or cid (no psc on CDMA exists to backfill using inference)')
+        if (data['radio'] == RADIO_TYPE['cdma']
+                and (data['lac'] < 0 or data['cid'] < 0)):
+            raise Invalid(schema, (
+                'Skip CDMA towers missing lac or cid '
+                '(no psc on CDMA exists to backfill using inference)'))
 
-        if (data['radio'] in (RADIO_TYPE['gsm'], RADIO_TYPE['umts'], RADIO_TYPE['lte']) and data['mnc'] > 999):
-            raise Invalid(schema, 'Skip GSM/LTE/UMTS towers with an invalid MNC')
+        radio_types = RADIO_TYPE['gsm'], RADIO_TYPE['umts'], RADIO_TYPE['lte']
+        if data['radio'] in radio_types and data['mnc'] > 999:
+            raise Invalid(
+                schema, 'Skip GSM/LTE/UMTS towers with an invalid MNC')
 
         if (data['lac'] == -1 or data['cid'] == -1) and data['psc'] == -1:
-            raise Invalid(schema, 'Must have (lac and cid) or psc (psc-only to use in backfill)')
+            raise Invalid(schema, (
+                'Must have (lac and cid) or '
+                'psc (psc-only to use in backfill)'))
 
 
 class ValidCellSchema(ValidCellBaseSchema):
@@ -240,13 +275,30 @@ class ValidCellMeasureSchema(ValidCellBaseSchema):
 
     def validator(self, schema, data):
         if (data['lac'] == -1 or data['cid'] == -1) and data['psc'] == -1:
-            raise Invalid(schema, 'Must have (lac and cid) or psc (psc-only to use in backfill)')
+            raise Invalid(schema, (
+                'Must have (lac and cid) or '
+                'psc (psc-only to use in backfill)'))
 
-        if not any([geocalc.location_is_in_country(data['lat'], data['lon'], c.alpha2, 1) for c in mobile_codes.mcc(str(data['mcc']))]):
-            raise Invalid(schema, 'Lat/lon must be inside one of the bounding boxes for the MCC')
+        in_country = [
+            geocalc.location_is_in_country(
+                data['lat'], data['lon'], code.alpha2, 1)
+            for code in mobile_codes.mcc(str(data['mcc']))
+        ]
 
-        if (data['radio'] in (RADIO_TYPE['gsm'], RADIO_TYPE['umts'], RADIO_TYPE['lte'])and data['mnc'] > 999):
-            raise Invalid(schema, '{radio} can not have an MNC > 999'.format(radio=data['radio']))
+        if not any(in_country):
+            raise Invalid(schema, (
+                'Lat/lon must be inside one of '
+                'the bounding boxes for the MCC'))
 
-        if data['radio'] == RADIO_TYPE['cdma'] and (data['lac'] < 0 or data['cid'] < 0):
-            raise Invalid(schema, 'CDMA towers  must have lac or cid (no psc on CDMA exists to backfill using inference)')
+        radio_types = RADIO_TYPE['gsm'], RADIO_TYPE['umts'], RADIO_TYPE['lte']
+        if data['radio'] in radio_types and data['mnc'] > 999:
+            raise Invalid(
+                schema,
+                '{radio} can not have an MNC > 999'.format(
+                    radio=data['radio']))
+
+        if (data['radio'] == RADIO_TYPE['cdma'] and
+                (data['lac'] < 0 or data['cid'] < 0)):
+            raise Invalid(schema, (
+                'CDMA towers  must have lac or cid (no psc '
+                'on CDMA exists to backfill using inference)'))

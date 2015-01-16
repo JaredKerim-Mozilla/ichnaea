@@ -64,15 +64,17 @@ class TestCellValidation(ValidationTest):
         return (measure, cell)
 
     def setUp(self):
-        self.radio_pairs = [('gsm', 0),
-                       ('cdma', 1),
-                       ('umts', 2),
-                       ('wcdma', 2),
-                       ('lte', 3),
-                       ('wimax', -1),
-                       ('', -1),
-                       ('hspa', -1),
-                       ('n/a', -1)]
+        self.radio_pairs = [
+            ('gsm', 0),
+            ('cdma', 1),
+            ('umts', 2),
+            ('wcdma', 2),
+            ('lte', 3),
+            ('wimax', -1),
+            ('', -1),
+            ('hspa', -1),
+            ('n/a', -1),
+        ]
 
         self.invalid_mccs = [-10, 0, 101, 1000, 3456]
 
@@ -318,7 +320,7 @@ class TestCellValidation(ValidationTest):
             (measure, cell) = self.make_cell_submission(**entry)
             self.check_normalized_cell(measure, cell, None)
 
-    def test_fails_the_check_for_unknown_lac_cid_is_65535_and_missing_psc(self):
+    def test_unknown_lac_cid_is_65535_and_missing_psc(self):
         entries = [
             {'mcc': FRANCE_MCC, 'mnc': 2, 'lac': 0, 'cid': 65535, 'psc': -1},
 
@@ -396,8 +398,7 @@ class TestWifiValidation(ValidationTest):
             (5805, 161),
             (5825, 165)
         ]
-        self.invalid_frequencies = [-1, 2000, 2411, 2473,
-                               5168, 5826, 6000]
+        self.invalid_frequencies = [-1, 2000, 2411, 2473, 5168, 5826, 6000]
 
         self.valid_key_pairs = [
             ('12:34:56:78:90:12', '123456789012'),
